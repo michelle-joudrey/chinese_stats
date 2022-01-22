@@ -7,6 +7,12 @@ import re
 import os
 from anki.exporting import Exporter
 from inspect import getsourcefile
+import sys
+import time
+import pickle
+
+sys.path.append(os.path.join(os.path.dirname(__file__), 'lib'))
+from ahocorapy.keywordtree import KeywordTree
 
 def freq_num_stars(freq: int) -> int:
     if freq <= 1500:
@@ -23,7 +29,7 @@ def freq_num_stars(freq: int) -> int:
         return 0
 
 def chinese_stats() -> None:
-    addon_directory = os.path.dirname(os.path.abspath(getsourcefile(lambda:0)))
+    addon_directory = os.path.dirname(__file__)
     col = mw.col
     exporter = Exporter(col)
     decks = col.decks
@@ -67,19 +73,28 @@ def chinese_stats() -> None:
     freq_file_path = os.path.join(addon_directory, 'freq.txt')
     freq_file = open(freq_file_path, encoding='utf_8_sig')
     freq_data = freq_file.read().splitlines()
+    freq_for_word = {k: v for v, k in enumerate(freq_data)}
+
+    kwtree_file_path = os.path.join(addon_directory, 'freq-aho.pickle')
+    kwtree_file = open(kwtree_file_path, 'rb')
+    kwtree = pickle.load(kwtree_file)
+    kwtree_file.close()
+    
     freq_found_words = set()
     freq_results = dict()
     for num_stars in range(0, 6):
         freq_results.setdefault(str(num_stars), 0)
 
-    for sentence in sentences:
-        for freq, word in enumerate(freq_data):
-            if word in freq_found_words:
-                continue
-            if word in sentence:
-                num_stars = freq_num_stars(freq)
-                freq_results[str(num_stars)] += 1
-                freq_found_words.add(word)
+    # for each word in the frequency list, find out if it is within the list of sentences.
+    all_sentences = ''.join(sentences)
+    matches = kwtree.search_all(all_sentences)
+    for word, index in matches:
+        if word in freq_found_words:
+            continue
+        freq = freq_for_word[word]
+        num_stars = freq_num_stars(freq)
+        freq_results[str(num_stars)] += 1
+        freq_found_words.add(word)
 
     # Create output summary
     strs = []
