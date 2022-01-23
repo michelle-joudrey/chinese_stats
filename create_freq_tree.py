@@ -17,6 +17,6 @@ for word in freq_data:
     kwtree.add(word)
 kwtree.finalize()  
 
-kwtree_file = open("freq-aho.pickle", "wb")
+kwtree_file = open("freq_tree.pickle", "wb")
 pickle.dump(kwtree, kwtree_file)
 kwtree_file.close()
