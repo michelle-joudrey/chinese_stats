@@ -57,6 +57,12 @@ def freq_num_stars(freq: int) -> int:
     else:
         return 0
 
+def num_words_for_stars(num_stars: int) -> int:
+    return [ -1, 30000, 15000, 10000, 3500, 1500 ][num_stars]
+
+def num_words_in_hsk_level(hsk_level: int) -> int:
+    return [ 150, 150, 300, 600, 1300, 2500 ][hsk_level - 1]
+
 def chinese_stats() -> None:
     # Extract the sentences from the notes
     col = mw.col
@@ -105,14 +111,19 @@ def chinese_stats() -> None:
     strs = []
 
     strs.append("HSK Stats")
-    for level, num_found in sorted(hsk_results.items()):
-        strs.append('HSK {}: {} known'.format(level, num_found))
+    for level_str, num_found in sorted(hsk_results.items()):
+        percent_known_words  = round(num_found / num_words_in_hsk_level(int(level_str)) * 100.0, 1)
+        strs.append('HSK {}: {} known words ({}%)'.format(level_str, num_found, percent_known_words))
 
     strs.append("\nFrequency Stats")
-    for num_stars, num_found in sorted(freq_results.items(), reverse=True):
-        num_hollow_stars = 5 - int(num_stars)
-        stars_str = int(num_stars) * '★' + "☆" * num_hollow_stars
-        strs.append('{}: {} known'.format(stars_str, num_found))
+    for num_stars_str, num_found in sorted(freq_results.items(), reverse=True):
+        num_stars = int(num_stars_str)
+        num_hollow_stars = 5 - num_stars
+        stars_str = num_stars * '★' + "☆" * num_hollow_stars
+        star_total_num_words = num_words_for_stars(num_stars)
+        percent_known_words = round(float(num_found) / float(star_total_num_words) * 100.0, 1)
+        percent_known_str = "N/A" if num_stars == 0 else (str(percent_known_words) + '%')
+        strs.append('{}: {} known words ({})'.format(stars_str, num_found, percent_known_str))
 
     output = '\n'.join(strs)
 
