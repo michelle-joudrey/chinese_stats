@@ -8,11 +8,22 @@ import os
 from anki.exporting import Exporter
 from inspect import getsourcefile
 import sys
-import time
+import threading
 import pickle
 
 sys.path.append(os.path.join(os.path.dirname(__file__), 'lib'))
 from ahocorapy.keywordtree import KeywordTree
+
+addon_directory = os.path.dirname(__file__)
+
+freq_tree = None
+def load_freq_data():
+    global freq_tree
+
+    freq_tree_file_path = os.path.join(addon_directory, 'freq_tree.pickle')
+    freq_tree_file = open(freq_tree_file_path, 'rb')
+    freq_tree = pickle.load(freq_tree_file)
+    freq_tree_file.close()
 
 def freq_num_stars(freq: int) -> int:
     if freq <= 1500:
@@ -29,7 +40,6 @@ def freq_num_stars(freq: int) -> int:
         return 0
 
 def chinese_stats() -> None:
-    addon_directory = os.path.dirname(__file__)
     col = mw.col
     exporter = Exporter(col)
     decks = col.decks
@@ -74,27 +84,22 @@ def chinese_stats() -> None:
     freq_file = open(freq_file_path, encoding='utf_8_sig')
     freq_data = freq_file.read().splitlines()
     freq_for_word = {k: v for v, k in enumerate(freq_data)}
-
-    kwtree_file_path = os.path.join(addon_directory, 'freq-aho.pickle')
-    kwtree_file = open(kwtree_file_path, 'rb')
-    kwtree = pickle.load(kwtree_file)
-    kwtree_file.close()
-    
     freq_found_words = set()
     freq_results = dict()
     for num_stars in range(0, 6):
         freq_results.setdefault(str(num_stars), 0)
 
-    # for each word in the frequency list, find out if it is within the list of sentences.
-    all_sentences = ''.join(sentences)
-    matches = kwtree.search_all(all_sentences)
-    for word, index in matches:
-        if word in freq_found_words:
-            continue
-        freq = freq_for_word[word]
-        num_stars = freq_num_stars(freq)
-        freq_results[str(num_stars)] += 1
-        freq_found_words.add(word)
+    # Wait on freq_tree
+    load_freq_data_thread.join()
+
+    for sentence in sentences:
+        for word, index in freq_tree.search_all(sentence):
+            if word in freq_found_words:
+                continue
+            freq = freq_for_word[word]
+            num_stars = freq_num_stars(freq)
+            freq_results[str(num_stars)] += 1
+            freq_found_words.add(word)
 
     # Create output summary
     strs = []
@@ -116,3 +121,7 @@ def chinese_stats() -> None:
 action = QAction("Chinese Stats", mw)
 qconnect(action.triggered, chinese_stats)
 mw.form.menuTools.addAction(action)
+
+# Kick off frequency data loading since this takes a couple seconds.
+load_freq_data_thread = threading.Thread(target=load_freq_data)
+load_freq_data_thread.start()
