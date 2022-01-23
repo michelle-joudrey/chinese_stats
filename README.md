@@ -1,6 +1,9 @@
 # chinese_stats
 Anki Addon for Chinese Stats
 
+## Preview
+![](stats.png)
+
 ## Installation
 Download from https://ankiweb.net/shared/info/1959794557
 
