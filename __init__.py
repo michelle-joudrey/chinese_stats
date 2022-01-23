@@ -3,9 +3,7 @@ from aqt import mw
 from aqt.utils import showInfo, qconnect
 from aqt.qt import *
 import json
-import re
 import os
-from anki.exporting import Exporter
 from inspect import getsourcefile
 import sys
 import threading
@@ -16,9 +14,29 @@ from ahocorapy.keywordtree import KeywordTree
 
 addon_directory = os.path.dirname(__file__)
 
+hsk_data = None
+hsk_tree = None
+freq_for_word = None
 freq_tree = None
-def load_freq_data():
+def load_data():
+    global hsk_data
+    global hsk_tree
     global freq_tree
+    global freq_for_word
+
+    hsk_file_path = os.path.join(addon_directory, 'hsk.json')
+    hsk_file = open(hsk_file_path, encoding='utf_8_sig')
+    hsk_data = json.load(hsk_file)
+
+    hsk_tree_file_path = os.path.join(addon_directory, 'hsk_tree.pickle')
+    hsk_tree_file = open(hsk_tree_file_path, 'rb')
+    hsk_tree = pickle.load(hsk_tree_file)
+    hsk_tree_file.close()
+
+    freq_file_path = os.path.join(addon_directory, 'freq.txt')
+    freq_file = open(freq_file_path, encoding='utf_8_sig')
+    freq_data = freq_file.read().splitlines()
+    freq_for_word = {k: v for v, k in enumerate(freq_data)}
 
     freq_tree_file_path = os.path.join(addon_directory, 'freq_tree.pickle')
     freq_tree_file = open(freq_tree_file_path, 'rb')
@@ -41,7 +59,6 @@ def freq_num_stars(freq: int) -> int:
 
 def chinese_stats() -> None:
     col = mw.col
-    exporter = Exporter(col)
     decks = col.decks
     sentences = list()
 
@@ -56,44 +73,33 @@ def chinese_stats() -> None:
                 expression = note['Expression']
             except KeyError:
                 continue
-            # Remove html from the sentence
-            sentence = exporter.stripHTML(expression)
-            # Remove pinyin in the sentence e.g. "[ni3 hao3]" in "你好[ni3 hao3]"
-            sentence = re.sub('\[.*?\]', '', sentence)
-            sentences.append(sentence)
+            sentences.append(expression)
+
+    # Wait on trees
+    load_data_thread.join()
 
     # Search the sentences for HSK words
-    hsk_file_path = os.path.join(addon_directory, 'hsk.json')
-    hsk_file = open(hsk_file_path, encoding='utf_8_sig')
-    hsk_data = json.load(hsk_file)
     hsk_found_words = set()
     hsk_results = dict()
     for hsk_level in range(1, 7):
         hsk_results.setdefault(str(hsk_level), 0)
 
     for sentence in sentences:
-        for word, hsk_level in hsk_data.items():
+        for word, _ in hsk_tree.search_all(sentence):
             if word in hsk_found_words:
                 continue
-            if word in sentence:
-                hsk_results[str(hsk_level)] += 1
-                hsk_found_words.add(word)
+            hsk_level = hsk_data[word]
+            hsk_results[str(hsk_level)] += 1
+            hsk_found_words.add(word)
 
     # Search the sentences for words in the frequency list
-    freq_file_path = os.path.join(addon_directory, 'freq.txt')
-    freq_file = open(freq_file_path, encoding='utf_8_sig')
-    freq_data = freq_file.read().splitlines()
-    freq_for_word = {k: v for v, k in enumerate(freq_data)}
     freq_found_words = set()
     freq_results = dict()
     for num_stars in range(0, 6):
         freq_results.setdefault(str(num_stars), 0)
 
-    # Wait on freq_tree
-    load_freq_data_thread.join()
-
     for sentence in sentences:
-        for word, index in freq_tree.search_all(sentence):
+        for word, _ in freq_tree.search_all(sentence):
             if word in freq_found_words:
                 continue
             freq = freq_for_word[word]
@@ -122,6 +128,6 @@ action = QAction("Chinese Stats", mw)
 qconnect(action.triggered, chinese_stats)
 mw.form.menuTools.addAction(action)
 
-# Kick off frequency data loading since this takes a couple seconds.
-load_freq_data_thread = threading.Thread(target=load_freq_data)
-load_freq_data_thread.start()
+# Kick off loading the data since it takes a couple seconds.
+load_data_thread = threading.Thread(target=load_data)
+load_data_thread.start()
