@@ -58,24 +58,18 @@ def freq_num_stars(freq: int) -> int:
         return 0
 
 def chinese_stats() -> None:
-    col = mw.col
-    decks = col.decks
-    sentences = list()
-
     # Extract the sentences from the notes
-    for deck_name_and_id in decks.all_names_and_ids():
-        deck_id = deck_name_and_id.id
-        card_ids = decks.cids(deck_id)
-        for card_id in card_ids:
-            card = col.getCard(card_id)
-            note = card.note()
-            try: 
-                expression = note['Expression']
-            except KeyError:
-                continue
-            sentences.append(expression)
+    col = mw.col
+    sentences = list()
+    note_ids = col.find_notes('')
+    for note_id in note_ids:
+        note = col.getNote(note_id)
+        if 'Expression' not in note:
+            continue
+        expression = note['Expression']
+        sentences.append(expression)
 
-    # Wait on trees
+    # Wait on data loading to finish
     load_data_thread.join()
 
     # Search the sentences for HSK words
