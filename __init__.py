@@ -10,6 +10,7 @@ import sys
 import threading
 import pickle
 import datetime
+import itertools
 
 sys.path.append(os.path.join(os.path.dirname(__file__), 'lib'))
 from ahocorapy.keywordtree import KeywordTree
@@ -69,14 +70,18 @@ def num_words_in_hsk_level(hsk_level: int) -> int:
 def chinese_stats() -> None:
     # Extract the sentences from the notes
     col = mw.col
-    sentences = list()
+    sentence_note_ids = list()
     note_ids = col.find_notes('')
+    sentence_for_note_id = dict()
+
     for note_id in note_ids:
         note = col.getNote(note_id)
         if 'Expression' not in note:
             continue
-        expression = note['Expression']
-        sentences.append(expression)
+        sentence_note_ids.append(note_id)
+        sentence_for_note_id[note_id] = note['Expression']
+
+    sentence_note_ids.sort()
 
     # Wait on data loading to finish
     load_data_thread.join()
@@ -85,52 +90,41 @@ def chinese_stats() -> None:
     hsk_found_words = set()
     hsk_results = dict()
     for hsk_level in range(1, 7):
-        hsk_results.setdefault(str(hsk_level), 0)
+        hsk_results.setdefault(str(hsk_level), [])
 
-    for sentence in sentences:
+    for note_id in sentence_note_ids:
+        sentence = sentence_for_note_id[note_id]
         for word, _ in hsk_tree.search_all(sentence):
             if word in hsk_found_words:
                 continue
             hsk_level = hsk_data[word]
-            hsk_results[str(hsk_level)] += 1
+            hsk_results[str(hsk_level)].append(note_id)
             hsk_found_words.add(word)
 
     # Search the sentences for words in the frequency list
     freq_found_words = set()
     freq_results = dict()
     for num_stars in range(0, 6):
-        freq_results.setdefault(str(num_stars), 0)
+        freq_results.setdefault(str(num_stars), [])
 
-    for sentence in sentences:
+    for note_id in sentence_note_ids:
+        sentence = sentence_for_note_id[note_id]
         for word, _ in freq_tree.search_all(sentence):
             if word in freq_found_words:
                 continue
             freq = freq_for_word[word]
             num_stars = freq_num_stars(freq)
-            freq_results[str(num_stars)] += 1
+            freq_results[str(num_stars)].append(note_id)
             freq_found_words.add(word)
 
-    # Create output summary
-    strs = []
+    return (hsk_results, freq_results)
 
-    strs.append("HSK Stats")
-    for level_str, num_found in sorted(hsk_results.items()):
-        percent_known_words  = round(num_found / num_words_in_hsk_level(int(level_str)) * 100.0, 1)
-        strs.append('HSK {}: {} known words ({}%)'.format(level_str, num_found, percent_known_words))
+def to_day(time: datetime):
+    return datetime.datetime.strftime(time, '%Y-%m-%d')
 
-    strs.append("\nFrequency Stats")
-    for num_stars_str, num_found in sorted(freq_results.items(), reverse=True):
-        num_stars = int(num_stars_str)
-        num_hollow_stars = 5 - num_stars
-        stars_str = num_stars * '★' + "☆" * num_hollow_stars
-        star_total_num_words = num_words_for_stars(num_stars)
-        percent_known_words = round(float(num_found) / float(star_total_num_words) * 100.0, 1)
-        percent_known_str = "N/A" if num_stars == 0 else (str(percent_known_words) + '%')
-        strs.append('{}: {} known words ({})'.format(stars_str, num_found, percent_known_str))
+def to_datetime(time_str: str):
+    return datetime.datetime.strptime(time_str, '%Y-%m-%d')
 
-    output = '\n'.join(strs)
-
-    showInfo(output)
 
 class MyWebView(AnkiWebView):
     def __init__(self):
@@ -143,6 +137,7 @@ class MyWebView(AnkiWebView):
             google.charts.setOnLoadCallback(drawChart);
             
             var options = {
+                isStacked: true,
                 title: 'Known HSK Words',
                 hAxis: {title: 'Date',  titleTextStyle: {color: '#333'}},
                 vAxis: {minValue: 0}
@@ -153,15 +148,54 @@ class MyWebView(AnkiWebView):
                 var data = new google.visualization.DataTable(%(json)s, 0.6);
                 chart.draw(data, options);
             }
+
+            $(window).resize(function(){
+                drawChart();
+            });
         </script>
         <body>
             <H1>Known HSK Words</H1>
-            <div id="hsk_chart" style="width: 100%%; height: 500px;"></div>
+            <div id="hsk_chart" style="height: 500px; width: 100%%"></div>
         </body>
         </html>
         """
 
-          # Creating the data
+        # Creating the data
+        hsk_results, freq_results = chinese_stats()
+
+        # Group results by day
+        hsk_results_by_date = dict()
+        for hsk_level, note_ids in hsk_results.items():
+            for note_id in note_ids:
+                # Group results by day        
+                time_note_created = datetime.datetime.fromtimestamp(int(note_id) / 1000.0)
+                date_note_created_str = to_day(time_note_created)
+
+                if not date_note_created_str in hsk_results_by_date:
+                    hsk_results_by_date[date_note_created_str] = dict()
+
+                if not hsk_level in hsk_results_by_date[date_note_created_str]:
+                    hsk_results_by_date[date_note_created_str][hsk_level] = 0
+
+                hsk_results_by_date[date_note_created_str][hsk_level] += 1
+        
+        # Generate cumulative results per day
+        hsk_results_cum = dict()
+        hsk_level_running_totals = { '1': 0, '2': 0, '3': 0, '4': 0, '5': 0 , '6': 0 }
+        for date_str in sorted(hsk_results_by_date):
+            results = hsk_results_by_date[date_str]
+            for hsk_level, num_words_created in results.items():
+                hsk_level_running_totals[hsk_level] += num_words_created
+            hsk_results_cum[date_str] = dict(hsk_level_running_totals)
+                
+        # Generate per-day chart data
+        data = []
+        for date_str, results in hsk_results_cum.items():
+            row = { "date": to_datetime(date_str) }
+            for hsk_level, num_words_created in results.items():
+                row["hsk{}".format(hsk_level)] = num_words_created
+            data.append(row)
+
         description = {
             "date": ("date", "Date"),
             "hsk1": ("number", "HSK 1"),
@@ -171,11 +205,6 @@ class MyWebView(AnkiWebView):
             "hsk5": ("number", "HSK 5"),
             "hsk6": ("number", "HSK 6"),
         }
-        data = [
-            { "hsk1": 1, "hsk2": 0, "hsk3": 0, "date": datetime.date(2019,1,1) },
-            { "hsk1": 15, "hsk2": 3, "hsk3": 0, "date": datetime.date(2020,1,1) },
-            { "hsk1": 20, "hsk2": 7, "hsk3": 4, "date": datetime.date(2021,1,1) },
-        ]
                 
         # Loading it into gviz_api.DataTable
         data_table = gviz_api.DataTable(description)
@@ -192,8 +221,6 @@ def show_webview():
     webview.show()
     webview.setFocus()
     webview.activateWindow()
-
-
 
 action = QAction("Chinese Stats", mw)
 qconnect(action.triggered, show_webview)
