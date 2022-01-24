@@ -103,7 +103,7 @@ def chinese_stats() -> None:
     # Search the sentences for words in the frequency list
     freq_found_words = set()
     freq_results = dict()
-    for num_stars in range(0, 6):
+    for num_stars in reversed(range(0, 6)):
         freq_results.setdefault(str(num_stars), [])
 
     for note_id in sentence_note_ids:
@@ -124,58 +124,61 @@ def to_day(time: datetime):
 def to_datetime(time_str: str):
     return datetime.datetime.strptime(time_str, '%Y-%m-%d')
 
-def hsk_chart_json(note_info, hsk_results):
-    # Group results by day
-    hsk_results_by_date = dict()
-    for hsk_level, note_ids in hsk_results.items():
+def results_by_day(note_info, results):
+    results_by_date = dict()
+    for key, note_ids in results.items():
         for note_id in note_ids:
-            # Group results by day
             created_epoch = int(note_info[note_id]) / 1000.0
             time_note_created = datetime.datetime.fromtimestamp(created_epoch)
             date_note_created_str = to_day(time_note_created)
 
-            if not date_note_created_str in hsk_results_by_date:
-                hsk_results_by_date[date_note_created_str] = dict()
+            if not date_note_created_str in results_by_date:
+                results_by_date[date_note_created_str] = dict()
 
-            if not hsk_level in hsk_results_by_date[date_note_created_str]:
-                hsk_results_by_date[date_note_created_str][hsk_level] = 0
+            if not key in results_by_date[date_note_created_str]:
+                results_by_date[date_note_created_str][key] = 0
 
-            hsk_results_by_date[date_note_created_str][hsk_level] += 1
+            results_by_date[date_note_created_str][key] += 1
+    return results_by_date
     
-    # Generate cumulative results per day
-    hsk_results_cum = dict()
-    hsk_level_running_totals = { '1': 0, '2': 0, '3': 0, '4': 0, '5': 0 , '6': 0 }
-    for date_str in sorted(hsk_results_by_date):
-        results = hsk_results_by_date[date_str]
-        for hsk_level, num_words_created in results.items():
-            hsk_level_running_totals[hsk_level] += num_words_created
-        hsk_results_cum[date_str] = dict(hsk_level_running_totals)
+def cumulative_results_by_day(note_info, results):
+    results_by_date = results_by_day(note_info, results)
+    cumulative_results = dict()
+    running_total = dict.fromkeys(results.keys(), 0)
+    for date_str in sorted(results_by_date):
+        results = results_by_date[date_str]
+        for key, num_words_created in results.items():
+            running_total[key] += num_words_created
+        cumulative_results[date_str] = dict(running_total)
+    return cumulative_results
+
+def chart_json(note_info, results, column_name_func):
+    cumulative_daily_results = cumulative_results_by_day(note_info, results)
+
+    column_ids = dict()
+    for key in results.keys():
+        column_ids[key] = "col{}".format(key)
             
     # Generate per-day chart data
     data = []
-    for date_str, results in hsk_results_cum.items():
+    for date_str, cum_results in cumulative_daily_results.items():
         row = { "date": to_datetime(date_str) }
-        for hsk_level, num_words_created in results.items():
-            row["hsk{}".format(hsk_level)] = num_words_created
+        for key, num_words_created in cum_results.items():
+            column_id = column_ids[key]
+            row[column_id] = num_words_created
         data.append(row)
 
     description = {
-        "date": ("date", "Date"),
-        "hsk1": ("number", "HSK 1"),
-        "hsk2": ("number", "HSK 2"),
-        "hsk3": ("number", "HSK 3"),
-        "hsk4": ("number", "HSK 4"),
-        "hsk5": ("number", "HSK 5"),
-        "hsk6": ("number", "HSK 6"),
+        "date": ("date", "Date")
     }
+    for key in column_ids:
+        column_id = column_ids[key]
+        description[column_id] = ("number", column_name_func(key))
             
-    # Loading it into gviz_api.DataTable
     data_table = gviz_api.DataTable(description)
     data_table.LoadData(data)
-
-    # Create a JSON string.
     return data_table.ToJSon(
-        columns_order=("date", "hsk1", "hsk2", "hsk3", "hsk4", "hsk5", "hsk6"),
+        columns_order=tuple(["date"]) + tuple(column_ids.values()),
         order_by="date"
     )
 
@@ -187,38 +190,66 @@ class MyWebView(AnkiWebView):
         <script src="https://www.gstatic.com/charts/loader.js"></script>
         <script>
             google.charts.load('current', {packages:['corechart']});
-            google.charts.setOnLoadCallback(drawChart);
-            
-            var options = {
-                isStacked: true,
-                focusTarget: 'category',
-                title: 'Known HSK Words',
-                hAxis: {title: 'Date',  titleTextStyle: {color: '#333'}},
-                vAxis: {minValue: 0}
-            };
+            google.charts.setOnLoadCallback(drawCharts);
 
-            function drawChart() {
+            function drawHskChart() {
+                var options = {
+                    isStacked: true,
+                    focusTarget: 'category',
+                    title: 'Known Words by HSK Level',
+                    hAxis: {title: 'Date',  titleTextStyle: {color: '#333'}},
+                    vAxis: {minValue: 0}
+                };
                 var chart = new google.visualization.AreaChart(document.getElementById('hsk_chart'));
                 var data = new google.visualization.DataTable(%s, 0.6);
                 chart.draw(data, options);
             }
 
-            $(window).resize(function(){
-                drawChart();
+            function drawFreqChart() {
+                var options = {
+                    isStacked: true,
+                    focusTarget: 'category',
+                    title: 'Known Words by Frequency Rating',
+                    hAxis: {title: 'Date',  titleTextStyle: {color: '#333'}},
+                    vAxis: {minValue: 0}
+                };
+                var chart = new google.visualization.AreaChart(document.getElementById('freq_chart'));
+                var data = new google.visualization.DataTable(%s, 0.6);
+                chart.draw(data, options);
+            }
+
+            function drawCharts() {
+                drawHskChart();
+                drawFreqChart();
+            }
+
+            $(window).resize(function() {
+                drawCharts()
             });
         </script>
         <body>
-            <H1>Known HSK Words</H1>
+            <H1>Chinese Stats</H1>
             <div id="hsk_chart" style="height: 500px; width: 100%%"></div>
+            <div id="freq_chart" style="height: 500px; width: 100%%"></div>
         </body>
         </html>
         """
 
-        # Creating the data
+        # Create the chart data
         note_info, hsk_results, freq_results = chinese_stats()
 
-        hsk_json = hsk_chart_json(note_info, hsk_results)
-        html = page_template % (hsk_json)
+        def hsk_column_name(column_id):
+            return "HSK {}".format(column_id)
+        hsk_json = chart_json(note_info, hsk_results, hsk_column_name)
+
+        def freq_column_name(column_id):
+            num_stars = int(column_id)
+            num_hollow_stars = 5 - num_stars
+            return num_stars * '★' + "☆" * num_hollow_stars
+        freq_json = chart_json(note_info, freq_results, freq_column_name)
+
+        # Inject it into the template
+        html = page_template % (hsk_json, freq_json)
         self.stdHtml(html)
 
 def show_webview():
