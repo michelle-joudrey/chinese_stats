@@ -2,15 +2,18 @@ from typing import Dict
 from aqt import mw
 from aqt.utils import showInfo, qconnect
 from aqt.qt import *
+from aqt.webview import AnkiWebView
 import json
 import os
 from inspect import getsourcefile
 import sys
 import threading
 import pickle
+import datetime
 
 sys.path.append(os.path.join(os.path.dirname(__file__), 'lib'))
 from ahocorapy.keywordtree import KeywordTree
+from gviz import gviz_api
 
 addon_directory = os.path.dirname(__file__)
 
@@ -129,8 +132,71 @@ def chinese_stats() -> None:
 
     showInfo(output)
 
+class MyWebView(AnkiWebView):
+    def __init__(self):
+        AnkiWebView.__init__(self, None)
+        page_template = """
+        <html>
+        <script src="https://www.gstatic.com/charts/loader.js"></script>
+        <script>
+            google.charts.load('current', {packages:['corechart']});
+            google.charts.setOnLoadCallback(drawChart);
+            
+            var options = {
+                title: 'Known HSK Words',
+                hAxis: {title: 'Date',  titleTextStyle: {color: '#333'}},
+                vAxis: {minValue: 0}
+            };
+
+            function drawChart() {
+                var chart = new google.visualization.AreaChart(document.getElementById('hsk_chart'));
+                var data = new google.visualization.DataTable(%(json)s, 0.6);
+                chart.draw(data, options);
+            }
+        </script>
+        <body>
+            <H1>Known HSK Words</H1>
+            <div id="hsk_chart" style="width: 100%%; height: 500px;"></div>
+        </body>
+        </html>
+        """
+
+          # Creating the data
+        description = {
+            "date": ("date", "Date"),
+            "hsk1": ("number", "HSK 1"),
+            "hsk2": ("number", "HSK 2"),
+            "hsk3": ("number", "HSK 3"),
+            "hsk4": ("number", "HSK 4"),
+            "hsk5": ("number", "HSK 5"),
+            "hsk6": ("number", "HSK 6"),
+        }
+        data = [
+            { "hsk1": 1, "hsk2": 0, "hsk3": 0, "date": datetime.date(2019,1,1) },
+            { "hsk1": 15, "hsk2": 3, "hsk3": 0, "date": datetime.date(2020,1,1) },
+            { "hsk1": 20, "hsk2": 7, "hsk3": 4, "date": datetime.date(2021,1,1) },
+        ]
+                
+        # Loading it into gviz_api.DataTable
+        data_table = gviz_api.DataTable(description)
+        data_table.LoadData(data)
+
+        # Create a JSON string.
+        json = data_table.ToJSon(columns_order=("date", "hsk1", "hsk2", "hsk3", "hsk4", "hsk5", "hsk6"),
+                                order_by="date")
+        html = page_template % vars()
+        self.stdHtml(html)
+
+def show_webview():
+    webview = MyWebView()
+    webview.show()
+    webview.setFocus()
+    webview.activateWindow()
+
+
+
 action = QAction("Chinese Stats", mw)
-qconnect(action.triggered, chinese_stats)
+qconnect(action.triggered, show_webview)
 mw.form.menuTools.addAction(action)
 
 # Kick off loading the data since it takes a couple seconds.
