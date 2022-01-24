@@ -71,17 +71,16 @@ def chinese_stats() -> None:
     # Extract the sentences from the notes
     col = mw.col
     sentence_note_ids = list()
-    note_ids = col.find_notes('')
     sentence_for_note_id = dict()
+    note_info = {}
 
-    for note_id in note_ids:
+    for note_id, first_study_date in col.db.execute("select nid, min(revlog.id) as date from notes, cards, revlog where notes.id=cards.nid and cards.id=revlog.cid and cards.queue>0 group by notes.id order by date;"):
         note = col.getNote(note_id)
         if 'Expression' not in note:
             continue
         sentence_note_ids.append(note_id)
         sentence_for_note_id[note_id] = note['Expression']
-
-    sentence_note_ids.sort()
+        note_info[note_id] = first_study_date
 
     # Wait on data loading to finish
     load_data_thread.join()
@@ -117,7 +116,7 @@ def chinese_stats() -> None:
             freq_results[str(num_stars)].append(note_id)
             freq_found_words.add(word)
 
-    return (hsk_results, freq_results)
+    return (note_info, hsk_results, freq_results)
 
 def to_day(time: datetime):
     return datetime.datetime.strftime(time, '%Y-%m-%d')
@@ -138,6 +137,7 @@ class MyWebView(AnkiWebView):
             
             var options = {
                 isStacked: true,
+                focusTarget: 'category',
                 title: 'Known HSK Words',
                 hAxis: {title: 'Date',  titleTextStyle: {color: '#333'}},
                 vAxis: {minValue: 0}
@@ -161,14 +161,14 @@ class MyWebView(AnkiWebView):
         """
 
         # Creating the data
-        hsk_results, freq_results = chinese_stats()
+        note_info, hsk_results, freq_results = chinese_stats()
 
         # Group results by day
         hsk_results_by_date = dict()
         for hsk_level, note_ids in hsk_results.items():
             for note_id in note_ids:
-                # Group results by day        
-                time_note_created = datetime.datetime.fromtimestamp(int(note_id) / 1000.0)
+                # Group results by day
+                time_note_created = datetime.datetime.fromtimestamp(int(note_info[note_id]) / 1000.0)
                 date_note_created_str = to_day(time_note_created)
 
                 if not date_note_created_str in hsk_results_by_date:
