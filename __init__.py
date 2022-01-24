@@ -124,6 +124,60 @@ def to_day(time: datetime):
 def to_datetime(time_str: str):
     return datetime.datetime.strptime(time_str, '%Y-%m-%d')
 
+def hsk_chart_json(note_info, hsk_results):
+    # Group results by day
+    hsk_results_by_date = dict()
+    for hsk_level, note_ids in hsk_results.items():
+        for note_id in note_ids:
+            # Group results by day
+            created_epoch = int(note_info[note_id]) / 1000.0
+            time_note_created = datetime.datetime.fromtimestamp(created_epoch)
+            date_note_created_str = to_day(time_note_created)
+
+            if not date_note_created_str in hsk_results_by_date:
+                hsk_results_by_date[date_note_created_str] = dict()
+
+            if not hsk_level in hsk_results_by_date[date_note_created_str]:
+                hsk_results_by_date[date_note_created_str][hsk_level] = 0
+
+            hsk_results_by_date[date_note_created_str][hsk_level] += 1
+    
+    # Generate cumulative results per day
+    hsk_results_cum = dict()
+    hsk_level_running_totals = { '1': 0, '2': 0, '3': 0, '4': 0, '5': 0 , '6': 0 }
+    for date_str in sorted(hsk_results_by_date):
+        results = hsk_results_by_date[date_str]
+        for hsk_level, num_words_created in results.items():
+            hsk_level_running_totals[hsk_level] += num_words_created
+        hsk_results_cum[date_str] = dict(hsk_level_running_totals)
+            
+    # Generate per-day chart data
+    data = []
+    for date_str, results in hsk_results_cum.items():
+        row = { "date": to_datetime(date_str) }
+        for hsk_level, num_words_created in results.items():
+            row["hsk{}".format(hsk_level)] = num_words_created
+        data.append(row)
+
+    description = {
+        "date": ("date", "Date"),
+        "hsk1": ("number", "HSK 1"),
+        "hsk2": ("number", "HSK 2"),
+        "hsk3": ("number", "HSK 3"),
+        "hsk4": ("number", "HSK 4"),
+        "hsk5": ("number", "HSK 5"),
+        "hsk6": ("number", "HSK 6"),
+    }
+            
+    # Loading it into gviz_api.DataTable
+    data_table = gviz_api.DataTable(description)
+    data_table.LoadData(data)
+
+    # Create a JSON string.
+    return data_table.ToJSon(
+        columns_order=("date", "hsk1", "hsk2", "hsk3", "hsk4", "hsk5", "hsk6"),
+        order_by="date"
+    )
 
 class MyWebView(AnkiWebView):
     def __init__(self):
@@ -145,7 +199,7 @@ class MyWebView(AnkiWebView):
 
             function drawChart() {
                 var chart = new google.visualization.AreaChart(document.getElementById('hsk_chart'));
-                var data = new google.visualization.DataTable(%(json)s, 0.6);
+                var data = new google.visualization.DataTable(%s, 0.6);
                 chart.draw(data, options);
             }
 
@@ -163,57 +217,8 @@ class MyWebView(AnkiWebView):
         # Creating the data
         note_info, hsk_results, freq_results = chinese_stats()
 
-        # Group results by day
-        hsk_results_by_date = dict()
-        for hsk_level, note_ids in hsk_results.items():
-            for note_id in note_ids:
-                # Group results by day
-                time_note_created = datetime.datetime.fromtimestamp(int(note_info[note_id]) / 1000.0)
-                date_note_created_str = to_day(time_note_created)
-
-                if not date_note_created_str in hsk_results_by_date:
-                    hsk_results_by_date[date_note_created_str] = dict()
-
-                if not hsk_level in hsk_results_by_date[date_note_created_str]:
-                    hsk_results_by_date[date_note_created_str][hsk_level] = 0
-
-                hsk_results_by_date[date_note_created_str][hsk_level] += 1
-        
-        # Generate cumulative results per day
-        hsk_results_cum = dict()
-        hsk_level_running_totals = { '1': 0, '2': 0, '3': 0, '4': 0, '5': 0 , '6': 0 }
-        for date_str in sorted(hsk_results_by_date):
-            results = hsk_results_by_date[date_str]
-            for hsk_level, num_words_created in results.items():
-                hsk_level_running_totals[hsk_level] += num_words_created
-            hsk_results_cum[date_str] = dict(hsk_level_running_totals)
-                
-        # Generate per-day chart data
-        data = []
-        for date_str, results in hsk_results_cum.items():
-            row = { "date": to_datetime(date_str) }
-            for hsk_level, num_words_created in results.items():
-                row["hsk{}".format(hsk_level)] = num_words_created
-            data.append(row)
-
-        description = {
-            "date": ("date", "Date"),
-            "hsk1": ("number", "HSK 1"),
-            "hsk2": ("number", "HSK 2"),
-            "hsk3": ("number", "HSK 3"),
-            "hsk4": ("number", "HSK 4"),
-            "hsk5": ("number", "HSK 5"),
-            "hsk6": ("number", "HSK 6"),
-        }
-                
-        # Loading it into gviz_api.DataTable
-        data_table = gviz_api.DataTable(description)
-        data_table.LoadData(data)
-
-        # Create a JSON string.
-        json = data_table.ToJSon(columns_order=("date", "hsk1", "hsk2", "hsk3", "hsk4", "hsk5", "hsk6"),
-                                order_by="date")
-        html = page_template % vars()
+        hsk_json = hsk_chart_json(note_info, hsk_results)
+        html = page_template % (hsk_json)
         self.stdHtml(html)
 
 def show_webview():
