@@ -278,7 +278,7 @@ class SearchFieldConfig():
 
 def selected_field_from_config(config: SearchFieldConfig, deck_id: str, model_id: str) -> Optional[str]:
     for deck in config.decks:
-        if deck_id == deck_id:
+        if deck.id == deck_id:
             for model in deck.models:
                 if model.id == model_id:
                     return model.selected_field    
@@ -305,7 +305,7 @@ def search_fields_config_view_model(config: SearchFieldConfigModel) -> SearchFie
 
     for row in mw.col.db.execute('select group_concat(distinct notes.mid), cards.did from notes, cards where notes.id=cards.nid group by cards.did'):
         model_ids = row[0].split(',')
-        deck_id = row[1]
+        deck_id = str(row[1])
 
         models: List[SearchFieldConfigModelViewModel] = []
         for model_id in model_ids:
@@ -320,20 +320,18 @@ def search_fields_config_view_model(config: SearchFieldConfigModel) -> SearchFie
             models.append(SearchFieldConfigModelViewModel(model_name, model_id, fields, selected_field))
     
         deck_name = mw.col.decks.get(deck_id)['name']
-        decks.append(SearchFieldConfigDeckViewModel(deck_name, str(deck_id), models))
+        decks.append(SearchFieldConfigDeckViewModel(deck_name, deck_id, models))
 
     return SearchFieldConfigViewModel(decks)
 
 def search_fields_config(view_model: SearchFieldConfigViewModel) -> SearchFieldConfig:
     decks : List[SearchFieldConfigDeck] = []
     for view_model_deck in view_model.decks:
-        deck_contains_selected_field = False
         models: List[SearchFieldConfigModel] = []
         for view_model_model in view_model_deck.models:
             if view_model_model.selected_field is not None:
                 models.append(SearchFieldConfigModel(view_model_model.id, view_model_model.selected_field))
-                deck_contains_selected_field = True
-        if deck_contains_selected_field:
+        if models:
             decks.append(SearchFieldConfigDeck(view_model_deck.id, models))
     return SearchFieldConfig(decks)
 
