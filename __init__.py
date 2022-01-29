@@ -281,28 +281,53 @@ def show_settings():
 
     dialog = QDialog()
     dialog.setWindowTitle("Chinese Stats (Settings):")
+    dialog.setFixedWidth(500)
+    dialog.setMinimumHeight(640)
     
-    layout = QVBoxLayout(dialog)
+    layout = QVBoxLayout()
 
+    scrollable_widget = QWidget()
+    scrollable_widget.setLayout(layout)
+    scrollable_widget.setFixedWidth(450)
+
+    scroll_area = QScrollArea()
+    scroll_area.setWidgetResizable(True)
+    scroll_area.setWidget(scrollable_widget)
+    scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+    scroll_area.setFixedWidth(480)
+
+    main_layout = QVBoxLayout(dialog)
+    main_layout.addWidget(scroll_area)
+    
     field_search_setting_label = QLabel('Choose which field to search within each deck and note type.')
     layout.addWidget(field_search_setting_label)
     layout.addSpacing(8)
 
-    for deck_id, deck in decks.items():
-        deck_label = QLabel(deck['name'])
-        layout.addWidget(deck_label)
-        
-        deck_layout = QFormLayout()
-        deck_layout.setContentsMargins(16, 0, 0, 0)
+    for deck_id, deck in decks.items():        
+        deck_layout = QVBoxLayout()
+        deck_box = QGroupBox(deck['name'])
+        deck_box.setLayout(deck_layout)
         
         models = deck['models']
         for model_id, model in models.items():
+            model_layout = QHBoxLayout()
+
+            model_label = QLabel(model['name'])
+            model_layout.addWidget(model_label)
+
             field_selector = QComboBox()
+            # Prevent the scroll wheel from changing the value.
+            field_selector.wheelEvent = lambda event: None
             field_selector.addItem('Disabled')
             field_selector.addItems(model['fields'])
-            deck_layout.addRow(model['name'], field_selector)
-        layout.addLayout(deck_layout)
+            model_layout.addWidget(field_selector)
+
+            deck_layout.addLayout(model_layout)
+
+        layout.addWidget(deck_box)
         layout.addSpacing(8)
+
+    layout.addStretch(1)
 
     dialog.exec_()
 
