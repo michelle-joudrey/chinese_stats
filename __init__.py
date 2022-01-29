@@ -1,16 +1,13 @@
-from typing import Dict
 from aqt import mw
-from aqt.utils import showInfo, qconnect
+from aqt.utils import qconnect
 from aqt.qt import *
 from aqt.webview import AnkiWebView
 import json
 import os
-from inspect import getsourcefile
 import sys
 import threading
 import pickle
 import datetime
-import itertools
 
 sys.path.append(os.path.join(os.path.dirname(__file__), 'lib'))
 from ahocorapy.keywordtree import KeywordTree
@@ -258,9 +255,65 @@ def show_webview():
     webview.setFocus()
     webview.activateWindow()
 
-action = QAction("Chinese Stats", mw)
-qconnect(action.triggered, show_webview)
-mw.form.menuTools.addAction(action)
+def show_settings():
+    model_ids_and_deck_ids = mw.col.db.execute('select distinct notes.mid, cards.did from notes, cards where notes.id=cards.nid')
+
+    decks = {}
+    for model_id, deck_id in model_ids_and_deck_ids:
+        deck_id_str = str(deck_id)
+        if deck_id_str not in decks:
+            decks[deck_id_str] = { 
+                'name': mw.col.decks.get(deck_id)['name'],
+                'models': { }
+            }
+        model_id_str = str(model_id)
+        model = mw.col.models.get(model_id)
+        model_name = model['name']
+
+        field_names = []
+        for field in model['flds']:
+            field_names.append(field['name'])
+
+        decks[deck_id_str]['models'][model_id_str] = {
+            'name': model_name,
+            'fields': field_names
+        }
+
+    dialog = QDialog()
+    dialog.setWindowTitle("Chinese Stats (Settings):")
+    
+    layout = QVBoxLayout(dialog)
+
+    field_search_setting_label = QLabel('Choose which field to search within each deck and note type.')
+    layout.addWidget(field_search_setting_label)
+    layout.addSpacing(8)
+
+    for deck_id, deck in decks.items():
+        deck_label = QLabel(deck['name'])
+        layout.addWidget(deck_label)
+        
+        deck_layout = QFormLayout()
+        deck_layout.setContentsMargins(16, 0, 0, 0)
+        
+        models = deck['models']
+        for model_id, model in models.items():
+            field_selector = QComboBox()
+            field_selector.addItem('Disabled')
+            field_selector.addItems(model['fields'])
+            deck_layout.addRow(model['name'], field_selector)
+        layout.addLayout(deck_layout)
+        layout.addSpacing(8)
+
+    dialog.exec_()
+
+
+stats_action = QAction("Chinese Stats (Stats)", mw)
+qconnect(stats_action.triggered, show_webview)
+mw.form.menuTools.addAction(stats_action)
+
+settings_action = QAction("Chinese Stats (Settings)", mw)
+qconnect(settings_action.triggered, show_settings)
+mw.form.menuTools.addAction(settings_action)
 
 # Kick off loading the data since it takes a couple seconds.
 load_data_thread = threading.Thread(target=load_data)
