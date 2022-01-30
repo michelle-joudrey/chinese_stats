@@ -95,8 +95,9 @@ def save_search_field_config(search_fields_config: SearchFieldConfig):
             'search_fields': dataclasses.asdict(search_fields_config)
         }
     else: 
-        config = { }
+        config = {}
     mw.addonManager.writeConfig(__name__, config)
+    tooltip("Config saved.")
 
 def selected_field_changed(model, view_model, selected_field):
     # Update the view model, convert it back into the model, and save the model.
@@ -160,3 +161,6 @@ def show_settings():
     layout.addStretch(1)
 
     dialog.exec_()
+
+# Show our config dialog when our addon's config is accessed in the Addons window.
+mw.addonManager.setConfigAction(__name__, show_settings)

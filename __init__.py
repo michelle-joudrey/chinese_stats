@@ -257,13 +257,9 @@ def show_webview():
     webview.setFocus()
     webview.activateWindow()
 
-stats_action = QAction("Chinese Stats (Stats)", mw)
+stats_action = QAction("Chinese Stats", mw)
 qconnect(stats_action.triggered, show_webview)
 mw.form.menuTools.addAction(stats_action)
-
-settings_action = QAction("Chinese Stats (Settings)", mw)
-qconnect(settings_action.triggered, config.show_settings)
-mw.form.menuTools.addAction(settings_action)
 
 # Kick off loading the data since it takes a couple seconds.
 load_data_thread = threading.Thread(target=load_data)
