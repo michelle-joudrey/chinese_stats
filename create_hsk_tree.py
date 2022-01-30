@@ -1,10 +1,8 @@
 import os
-import sys
 import pickle
 import json
 
-sys.path.append(os.path.join(os.path.dirname(__file__), 'lib'))
-from ahocorapy.keywordtree import KeywordTree
+from .lib.ahocorapy.keywordtree import KeywordTree
     
 addon_directory = os.path.dirname(__file__)
 
